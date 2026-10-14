@@ -1,20 +1,1104 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#121214" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>CS2 Tactics Lab — Интерактивный справочник раскидок и AI Капитан</title>
-    <!-- Tactical Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body class="bg-csdark-900 text-gray-100 antialiased selection:bg-csorange selection:text-black min-h-screen">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>CS2 Lineups Lab — Справочник раскидок</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Inter (Body), Chakra Petch (CS2 Tactical Display), JetBrains Mono (Technical/Stats) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+  <!-- React 18 & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['Chakra Petch', 'Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            tactical: {
+              void: '#0a0b0e',
+              base: '#0f1117',
+              card: '#151821',
+              cardHover: '#1c202c',
+              border: '#232836',
+              borderLight: '#32394c',
+            },
+            lightSurface: {
+              base: '#f1f3f7',
+              card: '#ffffff',
+              cardHover: '#f8fafc',
+              border: '#e2e6ee',
+              borderLight: '#cbd5e1',
+            },
+            cs: {
+              orange: '#f59e0b',
+              t: '#f59e0b',
+              ct: '#38bdf8',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* Custom subtle scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #262a36; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4255; }
+
+    /* Transitions & animations */
+    .fade-enter {
+      animation: fadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Tactical radar pulse */
+    @keyframes pulseRing {
+      0% { transform: scale(0.95); opacity: 0.9; }
+      50% { transform: scale(1.4); opacity: 0.2; }
+      100% { transform: scale(0.95); opacity: 0.9; }
+    }
+    .radar-pulse {
+      animation: pulseRing 2.4s infinite ease-in-out;
+    }
+
+    .backdrop-safe {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+<body class="bg-lightSurface-base text-slate-800 dark:bg-tactical-void dark:text-zinc-100 min-h-screen flex flex-col antialiased selection:bg-amber-500 selection:text-black">
+  <div id="root" class="flex-1 flex flex-col"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // =========================================================================
+    // 1. DATA: CS2 COMPETITIVE MAP POOL (2 COLUMNS)
+    // =========================================================================
+    const MAPS_COL_LEFT = [
+      {
+        id: 'mirage',
+        name: 'Mirage',
+        image: 'media/mirage_cover.jpg',
+        active: true,
+        stats: '1 раскидка в базе',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'inferno',
+        name: 'Inferno',
+        image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'nuke',
+        name: 'Nuke',
+        image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'dust2',
+        name: 'Dust II',
+        image: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+    ];
+
+    const MAPS_COL_RIGHT = [
+      {
+        id: 'ancient',
+        name: 'Ancient',
+        image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'anubis',
+        name: 'Anubis',
+        image: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'vertigo',
+        name: 'Vertigo',
+        image: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Active Duty',
+      },
+      {
+        id: 'overpass',
+        name: 'Overpass',
+        image: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80',
+        active: false,
+        stats: 'Скоро',
+        callout: 'Reserve Pool',
+      },
+    ];
+
+    // =========================================================================
+    // 2. GRENADES FILTER LIST (NO TEXT "ВСЕ ГРАНАТЫ", ONLY PURE ICONS)
+    // =========================================================================
+    const GRENADE_TYPES = [
+      { id: 'smoke', label: 'Смок', icon: 'media/smoke.png' },
+      { id: 'molotov', label: 'Молотов', icon: 'media/molotov.png' },
+      { id: 'flash', label: 'Флеш', icon: 'media/flash.png' },
+      { id: 'he', label: 'Осколочная', icon: 'media/he.png' },
+    ];
+
+    // =========================================================================
+    // 3. VERIFIED LINEUPS DATABASE (NO FAKE LINEUPS)
+    // =========================================================================
+    const LINEUPS_DATABASE = [
+      {
+        id: 'mirage-smoke-connector',
+        mapId: 'mirage',
+        title: 'Смок в коннектор',
+        grenadeType: 'smoke',
+        side: 'T',
+        startPosition: 'Т-Спавн (Мусорка)',
+        targetPosition: 'Коннектор',
+        throwTechnique: 'Jumpthrow',
+        coverImage: 'media/mirage_smoke_connector_res.jpg',
+        description: 'Базовый смок для захода на точку A. Полностью закрывает арку коннектора, изолируя снайпера и опорника от просмотра ямы и ковров.',
+        radarPin: {
+          x: 96.2, // T-spawn throw position (top-right of green T-box, trash can)
+          y: 34.6,
+          targetX: 48.8, // Connector stairs (lowered directly onto the steps)
+          targetY: 59.2,
+        },
+        steps: [
+          {
+            id: 'position',
+            stepNumber: 1,
+            title: 'Куда становиться',
+            badge: 'Позиция',
+            description: 'Встаньте в угол между кирпичной стеной и мусорным баком на Т-спавне (в упор к углу).',
+            image: 'media/mirage_smoke_connector_pos.png',
+          },
+          {
+            id: 'aim',
+            stepNumber: 2,
+            title: 'Куда целиться',
+            badge: 'Прицел',
+            description: 'Наведите прицел на верхнюю кромку темного узора ковра на балконе (ровно по указанной отметке).',
+            image: 'media/mirage_smoke_connector_aim.png',
+          },
+          {
+            id: 'result',
+            stepNumber: 3,
+            title: 'Результат',
+            badge: 'Приземление',
+            description: 'Выполните бросок с прыжком (Jumpthrow). Дым раскрывается строго в центре арки коннектора без щелей.',
+            image: 'media/mirage_smoke_connector_res.jpg',
+          },
+        ],
+      },
+    ];
+
+    // =========================================================================
+    // 4. MAIN APPLICATION COMPONENT
+    // =========================================================================
+    function App() {
+      // Views: 'maps' | 'team_select' | 'lineups_catalog' | 'lineup_detail'
+      const [view, setView] = useState('maps');
+      const [currentMap, setCurrentMap] = useState('mirage');
+      const [team, setTeam] = useState('all'); // 'all' | 'T' | 'CT'
+      const [selectedGrenade, setSelectedGrenade] = useState(null); // null (no filter) or 'smoke'|'molotov'|'flash'|'he'
+      const [selectedLineup, setSelectedLineup] = useState(null);
+      
+      // Fullscreen Image Lightbox
+      const [lightboxImage, setLightboxImage] = useState(null); // { image, title, badge }
+
+      // Light/Dark Theme Management
+      const [isDark, setIsDark] = useState(() => {
+        const saved = localStorage.getItem('cs2_theme');
+        return saved ? saved === 'dark' : true;
+      });
+
+      useEffect(() => {
+        const root = document.documentElement;
+        if (isDark) {
+          root.classList.add('dark');
+          localStorage.setItem('cs2_theme', 'dark');
+        } else {
+          root.classList.remove('dark');
+          localStorage.setItem('cs2_theme', 'light');
+        }
+      }, [isDark]);
+
+      // Keyboard shortcuts for Lightbox & Detail navigation
+      useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (e.key === 'Escape') {
+            if (lightboxImage) {
+              setLightboxImage(null);
+            } else if (view === 'lineup_detail') {
+              setView('lineups_catalog');
+            }
+          }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, [lightboxImage, view]);
+
+      // Filtered Lineups for Catalog
+      const filteredLineups = useMemo(() => {
+        return LINEUPS_DATABASE.filter(item => {
+          if (item.mapId !== currentMap) return false;
+          if (team !== 'all' && item.side !== team) return false;
+          if (selectedGrenade && item.grenadeType !== selectedGrenade) return false;
+          return true;
+        });
+      }, [currentMap, team, selectedGrenade]);
+
+      // Handlers
+      const handleSelectMap = (mapId) => {
+        setCurrentMap(mapId);
+        setView('team_select');
+      };
+
+      const handleConfirmTeam = (chosenTeam) => {
+        setTeam(chosenTeam);
+        setView('lineups_catalog');
+      };
+
+      const handleOpenLineupDetail = (lineup) => {
+        setSelectedLineup(lineup);
+        setView('lineup_detail');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      return (
+        <div className="flex-1 flex flex-col min-h-screen">
+
+          {/* ======================================================== */}
+          {/* TOP NAVBAR                                               */}
+          {/* ======================================================== */}
+          <header className="sticky top-0 z-40 bg-lightSurface-card/90 dark:bg-tactical-void/90 border-b border-lightSurface-border dark:border-tactical-border backdrop-safe px-4 sm:px-6 py-3 transition-colors">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              
+              {/* Brand Logo & Navigation */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setView('maps')}
+                  className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center font-display font-bold text-black text-sm tracking-wider shadow-sm group-hover:scale-105 transition-transform">
+                    CS2
+                  </div>
+                  <div>
+                    <span className="font-display font-bold text-base tracking-wider uppercase text-slate-900 dark:text-white block leading-none">
+                      LINEUPS LAB
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
+                      Справочник раскидок
+                    </span>
+                  </div>
+                </button>
+
+                {/* Breadcrumbs */}
+                {view !== 'maps' && (
+                  <div className="flex items-center gap-2 pl-3 border-l border-lightSurface-border dark:border-tactical-border text-xs font-medium text-slate-500 dark:text-zinc-400">
+                    <button
+                      onClick={() => setView('maps')}
+                      className="hover:text-amber-500 transition-colors cursor-pointer"
+                    >
+                      Карты
+                    </button>
+                    <span>/</span>
+                    <button
+                      onClick={() => setView('lineups_catalog')}
+                      className={`hover:text-amber-500 transition-colors cursor-pointer uppercase font-display font-semibold ${
+                        view === 'lineups_catalog' ? 'text-amber-500' : ''
+                      }`}
+                    >
+                      Mirage
+                    </button>
+
+                    {view === 'lineup_detail' && selectedLineup && (
+                      <>
+                        <span>/</span>
+                        <span className="text-slate-900 dark:text-white font-semibold truncate max-w-[120px] sm:max-w-[200px]">
+                          {selectedLineup.title}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Top Right: Theme Switcher */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsDark(prev => !prev)}
+                  className="w-9 h-9 rounded-xl border border-lightSurface-border dark:border-tactical-border bg-lightSurface-card dark:bg-tactical-card flex items-center justify-center text-sm text-slate-700 dark:text-zinc-300 hover:border-amber-500/60 transition-all cursor-pointer shadow-sm active:scale-95"
+                  title={isDark ? 'Включить светлую тему' : 'Включить темную тему'}
+                >
+                  {isDark ? '☀️' : '🌙'}
+                </button>
+              </div>
+
+            </div>
+          </header>
+
+          {/* ======================================================== */}
+          {/* MAIN CONTENT AREA                                        */}
+          {/* ======================================================== */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col items-center">
+
+            {/* ====================================================== */}
+            {/* VIEW 1: MAP SELECTION (2 COLUMNS AS IN ORIGINAL CS)    */}
+            {/* ====================================================== */}
+            {view === 'maps' && (
+              <div className="space-y-6 fade-enter max-w-4xl w-full">
+                {/* Header */}
+                <div className="text-center space-y-1 py-2">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight font-display uppercase">
+                    ВЫБЕРИТЕ КАРТУ
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
+                    Соревновательный пул CS2 для изучения раскидок
+                  </p>
+                </div>
+
+                {/* 2-Column Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Left Column */}
+                  <div className="space-y-3.5">
+                    {MAPS_COL_LEFT.map(map => (
+                      <MapItemCard
+                        key={map.id}
+                        map={map}
+                        onClick={() => map.active && handleSelectMap(map.id)}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Right Column */}
+                  <div className="space-y-3.5">
+                    {MAPS_COL_RIGHT.map(map => (
+                      <MapItemCard
+                        key={map.id}
+                        map={map}
+                        onClick={() => map.active && handleSelectMap(map.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ====================================================== */}
+            {/* VIEW 2: TEAM SELECTION (T / CT PROMPT)                 */}
+            {/* ====================================================== */}
+            {view === 'team_select' && (
+              <div className="max-w-xl w-full my-auto py-8 space-y-6 fade-enter text-center">
+                
+                {/* Header with Back button */}
+                <div className="space-y-1 relative">
+                  <button
+                    onClick={() => setView('maps')}
+                    className="absolute left-0 top-1 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span>←</span>
+                    <span>Карты</span>
+                  </button>
+                  <span className="text-[11px] font-bold tracking-wider text-amber-500 uppercase font-mono">
+                    MIRAGE
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-display uppercase">
+                    ВЫБЕРИТЕ СТОРОНУ
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
+                    За какую команду вы играете? Сменить сторону можно в любой момент.
+                  </p>
+                </div>
+
+                {/* 2 Big Choice Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  {/* T-Side Card */}
+                  <button
+                    onClick={() => handleConfirmTeam('T')}
+                    className="group p-5 rounded-2xl border border-amber-500/40 bg-lightSurface-card dark:bg-tactical-card hover:border-amber-500 hover:shadow-lg hover:shadow-amber-500/10 transition-all duration-200 text-left flex flex-col justify-between h-44 cursor-pointer active:scale-95"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center font-display font-bold text-lg border border-amber-500/30">
+                        T
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500 text-black uppercase tracking-wider">
+                        Атака
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white font-display group-hover:text-amber-500 transition-colors">
+                        ТЕРРОРИСТЫ
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                        Смоки на точки A и B, флешки для занятия мида и выходов.
+                      </p>
+                    </div>
+
+                    <div className="text-xs font-semibold text-amber-500 flex items-center gap-1">
+                      <span>Выбрать атаку</span>
+                      <span className="group-hover:translate-x-1 transition-transform">→</span>
+                    </div>
+                  </button>
+
+                  {/* CT-Side Card */}
+                  <button
+                    onClick={() => handleConfirmTeam('CT')}
+                    className="group p-5 rounded-2xl border border-sky-500/40 bg-lightSurface-card dark:bg-tactical-card hover:border-sky-500 hover:shadow-lg hover:shadow-sky-500/10 transition-all duration-200 text-left flex flex-col justify-between h-44 cursor-pointer active:scale-95"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center font-display font-bold text-lg border border-sky-500/30">
+                        CT
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-500 text-black uppercase tracking-wider">
+                        Защита
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white font-display group-hover:text-sky-400 transition-colors">
+                        СПЕЦНАЗ
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                        Опорные смоки, моменталки для приема и ретейков плентов.
+                      </p>
+                    </div>
+
+                    <div className="text-xs font-semibold text-sky-400 flex items-center gap-1">
+                      <span>Выбрать защиту</span>
+                      <span className="group-hover:translate-x-1 transition-transform">→</span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Show All Option */}
+                <div>
+                  <button
+                    onClick={() => handleConfirmTeam('all')}
+                    className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-amber-500 transition-colors py-2 px-4 rounded-lg cursor-pointer"
+                  >
+                    Показать раскидки для обеих сторон →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ====================================================== */}
+            {/* VIEW 3: LINEUPS CATALOG (NO RADAR MAP! ONLY CARDS)     */}
+            {/* ====================================================== */}
+            {view === 'lineups_catalog' && (
+              <div className="space-y-6 fade-enter w-full flex flex-col">
+                
+                {/* -------------------------------------------------- */}
+                {/* Tactical Top Bar: Back, Team Switcher, Grenades    */}
+                {/* -------------------------------------------------- */}
+                <div className="w-full bg-lightSurface-card dark:bg-tactical-card border border-lightSurface-border dark:border-tactical-border p-3.5 sm:p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4">
+                  
+                  {/* Left: Back & Map Name */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setView('maps')}
+                      className="px-2.5 py-1.5 rounded-xl border border-lightSurface-border dark:border-tactical-border text-xs font-semibold hover:bg-lightSurface-border dark:hover:bg-tactical-borderLight transition-all flex items-center gap-1.5 text-slate-700 dark:text-zinc-300 cursor-pointer active:scale-95"
+                    >
+                      <span>←</span>
+                      <span className="hidden sm:inline">Все карты</span>
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight font-display tracking-wider uppercase">
+                          Mirage
+                        </h2>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/30 uppercase">
+                          Active Duty
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono">
+                        {filteredLineups.length} {filteredLineups.length === 1 ? 'раскидка' : 'раскидок'} найдено
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Center: Team Switcher (Switch without reload) */}
+                  <div className="flex bg-lightSurface-base dark:bg-tactical-void p-1 rounded-xl border border-lightSurface-border dark:border-tactical-border text-xs font-semibold">
+                    <button
+                      onClick={() => setTeam('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        team === 'all'
+                          ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-black shadow-sm'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Все
+                    </button>
+                    <button
+                      onClick={() => setTeam('T')}
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                        team === 'T'
+                          ? 'bg-amber-500 text-black shadow-sm font-bold'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-amber-500'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
+                      <span>T (Атака)</span>
+                    </button>
+                    <button
+                      onClick={() => setTeam('CT')}
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                        team === 'CT'
+                          ? 'bg-sky-500 text-black shadow-sm font-bold'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-sky-400'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block"></span>
+                      <span>CT (Защита)</span>
+                    </button>
+                  </div>
+
+                  {/* Right: Grenade Icon Filter Buttons (No "Все гранаты" text!) */}
+                  <div className="flex items-center gap-2">
+                    {GRENADE_TYPES.map(g => {
+                      const isSelected = selectedGrenade === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          onClick={() => setSelectedGrenade(prev => (prev === g.id ? null : g.id))}
+                          title={isSelected ? `${g.label} (нажмите для сброса)` : g.label}
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150 border cursor-pointer active:scale-95 ${
+                            isSelected
+                              ? 'border-amber-500 bg-amber-500/20 ring-2 ring-amber-500/50 shadow-md scale-105'
+                              : 'border-lightSurface-border dark:border-tactical-border bg-lightSurface-base dark:bg-tactical-void opacity-70 hover:opacity-100 hover:border-slate-400 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <img
+                            src={g.icon}
+                            alt={g.label}
+                            className="w-5 h-5 object-contain pointer-events-none transition-transform invert dark:invert-0"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                </div>
+
+                {/* -------------------------------------------------- */}
+                {/* LINEUP TILES / WINDOWS GRID                        */}
+                {/* -------------------------------------------------- */}
+                <div className="w-full space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-white font-display">
+                      ОКНА С РАСКИДАМИ
+                    </h3>
+                    <span className="text-xs text-slate-500 dark:text-zinc-400 font-mono">
+                      Выберите раскидку для перехода к карте и фото
+                    </span>
+                  </div>
+
+                  {filteredLineups.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredLineups.map(lineup => (
+                        <div
+                          key={lineup.id}
+                          onClick={() => handleOpenLineupDetail(lineup)}
+                          className="group rounded-2xl overflow-hidden border border-lightSurface-border dark:border-tactical-border bg-lightSurface-card dark:bg-tactical-card hover:border-amber-500/80 hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col active:scale-[0.99]"
+                        >
+                          {/* Thumbnail */}
+                          <div className="relative aspect-video w-full overflow-hidden bg-slate-950">
+                            <img
+                              src={lineup.coverImage}
+                              alt={lineup.title}
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+
+                            {/* Badges on Top */}
+                            <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                              <span className="px-2 py-1 rounded-lg text-[11px] font-bold bg-black/75 backdrop-safe text-white border border-white/10 flex items-center gap-1.5">
+                                <img
+                                  src={`media/${lineup.grenadeType}.png`}
+                                  alt=""
+                                  className="w-3.5 h-3.5 object-contain"
+                                />
+                                <span>Смок</span>
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                lineup.side === 'T'
+                                  ? 'bg-amber-500 text-black'
+                                  : 'bg-sky-400 text-black'
+                              }`}>
+                                {lineup.side === 'T' ? 'T-Side' : 'CT-Side'}
+                              </span>
+                            </div>
+
+                            {/* Technique Pill on Top Right */}
+                            <div className="absolute top-2.5 right-2.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-black/80 backdrop-safe text-amber-400 border border-amber-500/30">
+                                {lineup.throwTechnique}
+                              </span>
+                            </div>
+
+                            {/* 3 Photos Indicator */}
+                            <div className="absolute bottom-2 right-2.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-black/80 backdrop-safe text-zinc-300 flex items-center gap-1">
+                                <span>📷</span>
+                                <span>3 фото + карта</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                            <div>
+                              <h4 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-amber-500 transition-colors">
+                                {lineup.title}
+                              </h4>
+                              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 line-clamp-2 leading-relaxed">
+                                {lineup.description}
+                              </p>
+                            </div>
+
+                            {/* Bottom Route Indicator */}
+                            <div className="pt-2 border-t border-lightSurface-border dark:border-tactical-border flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-slate-500 dark:text-zinc-400 font-mono text-[11px]">
+                                <span>{lineup.startPosition}</span>
+                                <span className="text-amber-500">→</span>
+                                <span className="text-amber-500 font-semibold">{lineup.targetPosition}</span>
+                              </div>
+
+                              <span className="text-xs font-semibold text-amber-500 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                                <span>Смотреть</span>
+                                <span>→</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Clean Empty State */
+                    <div className="text-center py-12 px-4 rounded-2xl border border-dashed border-lightSurface-border dark:border-tactical-border text-slate-400 dark:text-zinc-500">
+                      <p className="text-base font-bold text-slate-800 dark:text-zinc-200 font-display">
+                        Раскидки по данным фильтрам не найдены
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+                        Попробуйте переключить сторону на «T» или снять фильтр гранаты.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {/* ====================================================== */}
+            {/* VIEW 4: DETAILED LINEUP (MAP ON LEFT, 3 PHOTOS RIGHT)  */}
+            {/* ====================================================== */}
+            {view === 'lineup_detail' && selectedLineup && (
+              <div className="space-y-6 fade-enter w-full flex flex-col">
+                
+                {/* Detail Header Bar */}
+                <div className="w-full bg-lightSurface-card dark:bg-tactical-card border border-lightSurface-border dark:border-tactical-border p-3.5 sm:p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setView('lineups_catalog')}
+                      className="px-3 py-1.5 rounded-xl border border-lightSurface-border dark:border-tactical-border text-xs font-semibold hover:bg-lightSurface-border dark:hover:bg-tactical-borderLight transition-all flex items-center gap-1.5 text-slate-700 dark:text-zinc-300 cursor-pointer active:scale-95"
+                    >
+                      <span>←</span>
+                      <span>Назад к раскидкам</span>
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white leading-tight font-display tracking-wide">
+                          {selectedLineup.title}
+                        </h2>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                          selectedLineup.side === 'T' ? 'bg-amber-500 text-black' : 'bg-sky-400 text-black'
+                        }`}>
+                          {selectedLineup.side === 'T' ? 'T-Side' : 'CT-Side'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5">
+                        <span className="text-amber-500 font-bold">{selectedLineup.throwTechnique}</span>
+                        <span>•</span>
+                        <span>{selectedLineup.startPosition} → {selectedLineup.targetPosition}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Grenade badge on top right */}
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-500 text-xs font-bold flex items-center gap-2">
+                      <img
+                        src={`media/${selectedLineup.grenadeType}.png`}
+                        alt=""
+                        className="w-4 h-4 object-contain invert dark:invert-0"
+                      />
+                      <span>Смок (Дымовая)</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2-Column Core Layout: Map Left, Photos Right */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
+                  
+                  {/* ------------------------------------------------ */}
+                  {/* LEFT COLUMN: THE MAP SHOWING THROW POSITION      */}
+                  {/* ------------------------------------------------ */}
+                  <div className="lg:col-span-5 w-full bg-lightSurface-card dark:bg-tactical-card border border-lightSurface-border dark:border-tactical-border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 lg:sticky lg:top-20">
+                    
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <h3 className="font-display font-bold uppercase tracking-wider text-slate-900 dark:text-white text-sm">
+                          МЕСТО БРОСКА НА КАРТЕ
+                        </h3>
+                      </div>
+                      <span className="text-[11px] text-amber-500 font-mono font-bold">
+                        MIRAGE RADAR
+                      </span>
+                    </div>
+
+                    {/* Radar Map Container with Exact Throw Spot Pin */}
+                    <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-black border border-slate-800 shadow-inner group">
+                      <img
+                        src="media/mirage_radar.png"
+                        alt="Радар Mirage с местом броска"
+                        className="w-full h-full object-contain select-none"
+                      />
+
+                      {/* Animated Throw Position Marker and Landing Marker on Map */}
+                      {selectedLineup.radarPin && (
+                        <>
+                          {/* Tactical Dotted Trajectory Arc with Arrowhead aimed at landing spot */}
+                          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100">
+                            <defs>
+                              <linearGradient id="smokeTrajectory" x1="100%" y1="30%" x2="50%" y2="60%">
+                                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.95" />
+                                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.8" />
+                              </linearGradient>
+                              <marker id="smokeArrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto">
+                                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#f59e0b" />
+                              </marker>
+                            </defs>
+                            <path
+                              d={`M ${selectedLineup.radarPin.x} ${selectedLineup.radarPin.y} C 80 18, 62 26, ${selectedLineup.radarPin.targetX} ${selectedLineup.radarPin.targetY}`}
+                              fill="none"
+                              stroke="url(#smokeTrajectory)"
+                              strokeWidth="0.8"
+                              strokeDasharray="1.6, 1.2"
+                              markerEnd="url(#smokeArrow)"
+                            />
+                          </svg>
+
+                          {/* 1. Throw Position Marker (T-Spawn Trash Can) */}
+                          <div
+                            style={{ left: `${selectedLineup.radarPin.x}%`, top: `${selectedLineup.radarPin.y}%` }}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                          >
+                            {/* Pulse Aura */}
+                            <span className="absolute -inset-2.5 rounded-full bg-amber-500/50 radar-pulse pointer-events-none"></span>
+
+                            {/* Tactical Pin Body */}
+                            <div className="relative w-8 h-8 rounded-full bg-slate-950 border-2 border-amber-500 flex items-center justify-center shadow-2xl">
+                              <img
+                                src={`media/${selectedLineup.grenadeType}.png`}
+                                alt=""
+                                className="w-4 h-4 object-contain invert dark:invert-0"
+                              />
+                            </div>
+
+                            {/* Pin Callout Badge (Positioned safely to left/bottom so it never clips right border) */}
+                            <div className="absolute top-full right-0 mt-1 whitespace-nowrap z-30">
+                              <span className="px-2 py-0.5 rounded-md bg-black/95 text-amber-400 text-[10px] font-bold border border-amber-500/50 shadow-lg">
+                                Место броска
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 2. Landing Target Marker (Connector Stairs - placed directly on the steps) */}
+                          <div
+                            style={{ left: `${selectedLineup.radarPin.targetX}%`, top: `${selectedLineup.radarPin.targetY}%` }}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center"
+                          >
+                            {/* Callout Badge positioned above the pin so the stairs remain fully visible */}
+                            <div className="mb-1 whitespace-nowrap z-30">
+                              <span className="px-2 py-0.5 rounded-md bg-black/95 text-amber-300 text-[10px] font-bold border border-amber-400/40 shadow-lg">
+                                Место падения
+                              </span>
+                            </div>
+
+                            <div className="relative w-6 h-6 rounded-full bg-amber-500/25 border-2 border-dashed border-amber-400 flex items-center justify-center shadow-xl">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 absolute"></span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Tactical Info Badge */}
+                    <div className="p-3.5 rounded-xl bg-lightSurface-base dark:bg-tactical-void border border-lightSurface-border dark:border-tactical-border space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-zinc-400">Точка броска:</span>
+                        <span className="font-bold text-amber-500 font-mono">{selectedLineup.startPosition}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-zinc-400">Точка приземления:</span>
+                        <span className="font-bold text-slate-800 dark:text-zinc-200 font-mono">{selectedLineup.targetPosition}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-zinc-400">Техника броска:</span>
+                        <span className="font-bold text-slate-800 dark:text-zinc-200">{selectedLineup.throwTechnique}</span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* ------------------------------------------------ */}
+                  {/* RIGHT COLUMN: 3 COMPACT STEP PHOTO CARDS         */}
+                  {/* ------------------------------------------------ */}
+                  <div className="lg:col-span-7 w-full space-y-3">
+                    {/* Step 1: Куда становиться */}
+                    <LineupStepCard
+                      stepNumber={1}
+                      title="Куда становиться"
+                      badge="Позиция"
+                      description={selectedLineup.steps[0].description}
+                      image={selectedLineup.steps[0].image}
+                      onImageClick={() => setLightboxImage(selectedLineup.steps[0])}
+                    />
+
+                    {/* Step 2: Куда целиться */}
+                    <LineupStepCard
+                      stepNumber={2}
+                      title="Куда целиться"
+                      badge="Прицел"
+                      description={selectedLineup.steps[1].description}
+                      image={selectedLineup.steps[1].image}
+                      onImageClick={() => setLightboxImage(selectedLineup.steps[1])}
+                    />
+
+                    {/* Step 3: Результат */}
+                    <LineupStepCard
+                      stepNumber={3}
+                      title="Результат"
+                      badge="Приземление"
+                      description={selectedLineup.steps[2].description}
+                      image={selectedLineup.steps[2].image}
+                      onImageClick={() => setLightboxImage(selectedLineup.steps[2])}
+                    />
+
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+          </main>
+
+          {/* ======================================================== */}
+          {/* FULLSCREEN LIGHTBOX FOR PHOTO ZOOM                       */}
+          {/* ======================================================== */}
+          {lightboxImage && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/95 backdrop-safe fade-enter cursor-zoom-out"
+              onClick={() => setLightboxImage(null)}
+            >
+              <div
+                className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header in Lightbox */}
+                <div className="w-full flex items-center justify-between pb-3 text-white">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-black font-bold text-xs font-display uppercase">
+                      {lightboxImage.badge}
+                    </span>
+                    <span className="text-sm sm:text-base font-bold">
+                      {lightboxImage.title}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setLightboxImage(null)}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer text-sm"
+                    title="Закрыть (Esc)"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Main Full-Res Photo */}
+                <div className="relative w-full rounded-2xl overflow-hidden border border-white/20 bg-black shadow-2xl flex items-center justify-center">
+                  <img
+                    src={lightboxImage.image}
+                    alt={lightboxImage.title}
+                    className="w-full max-h-[75vh] object-contain select-none"
+                  />
+                </div>
+
+                {/* Description at bottom */}
+                <p className="text-xs sm:text-sm text-zinc-300 mt-3 text-center max-w-2xl leading-relaxed">
+                  {lightboxImage.description}
+                </p>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 5. HELPER COMPONENT: COMPACT LINEUP STEP CARD (RIGHT COLUMN)
+    // =========================================================================
+    function LineupStepCard({ stepNumber, title, badge, description, image, onImageClick }) {
+      return (
+        <div className="bg-lightSurface-card dark:bg-tactical-card border border-lightSurface-border dark:border-tactical-border rounded-xl overflow-hidden shadow-sm hover:border-amber-500/50 transition-all duration-200">
+          
+          {/* Card Header */}
+          <div className="px-3.5 py-2 border-b border-lightSurface-border dark:border-tactical-border bg-lightSurface-base/50 dark:bg-tactical-void/40 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-md bg-amber-500 text-black flex items-center justify-center font-bold text-[11px] font-display">
+                {stepNumber}
+              </span>
+              <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm font-display tracking-wide">
+                {title}
+              </h4>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30 uppercase">
+              {badge}
+            </span>
+          </div>
+
+          {/* Compact Photo & Description Layout */}
+          <div className="p-3 space-y-2">
+            {/* Clickable Image Container - Compact Height */}
+            <div
+              onClick={onImageClick}
+              className="relative h-36 sm:h-44 w-full rounded-lg overflow-hidden bg-black border border-slate-800 cursor-zoom-in group shadow-inner"
+              title="Нажмите для увеличения"
+            >
+              <img
+                src={image}
+                alt={title}
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+
+              {/* Zoom pill badge */}
+              <div className="absolute bottom-2 right-2">
+                <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-safe text-white text-[10px] font-medium flex items-center gap-1 shadow-md border border-white/10 group-hover:bg-amber-500 group-hover:text-black transition-colors">
+                  <span>🔍</span>
+                  <span>Увеличить</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Instruction Text */}
+            <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed font-sans">
+              {description}
+            </p>
+          </div>
+
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 6. MAP ITEM CARD (CS2 ORIGINAL STYLE 2-COLUMN ITEM)
+    // =========================================================================
+    function MapItemCard({ map, onClick }) {
+      return (
+        <button
+          onClick={onClick}
+          className={`w-full text-left relative rounded-2xl overflow-hidden border transition-all duration-200 h-32 group cursor-pointer ${
+            map.active
+              ? 'border-amber-500/60 dark:border-amber-500/50 hover:border-amber-500 shadow-md hover:shadow-amber-500/15 active:scale-[0.99]'
+              : 'border-lightSurface-border dark:border-tactical-border opacity-40 grayscale cursor-not-allowed'
+          }`}
+        >
+          <img
+            src={map.image}
+            alt={map.name}
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+
+          {/* Clean dark gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/25" />
+
+          {/* Top Callout Badge */}
+          <div className="absolute top-2.5 right-2.5">
+            {map.active ? (
+              <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider shadow-sm font-display">
+                Доступно
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-lg text-[10px] font-medium bg-black/75 text-zinc-400 border border-zinc-700/60 uppercase">
+                В разработке
+              </span>
+            )}
+          </div>
+
+          {/* Bottom Title */}
+          <div className="absolute bottom-2.5 left-3.5">
+            <h3 className="text-lg font-bold text-white tracking-wider leading-tight font-display uppercase">
+              {map.name}
+            </h3>
+            <span className="text-[11px] text-zinc-300 font-medium">
+              {map.active ? 'Перейти к раскидкам →' : 'Карта в разработке'}
+            </span>
+          </div>
+        </button>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
 </html>
